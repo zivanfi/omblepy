@@ -46,41 +46,11 @@ class sharedDeviceDriverCode():
         timeSyncNumBytes = self.settingsTimeSyncBytesSlice.stop - self.settingsTimeSyncBytesSlice.start
         self.cachedSettingsBytes += await btobj.readContinuousEepromData(self.settingsReadAddress + self.settingsTimeSyncBytesSlice.stop, timeSyncNumBytes)
         
-        if(useUnreadCounter):
-            allUsersReadCommandsList = await self._getReadCommands_OnlyNewRecords()
-        else:
-            allUsersReadCommandsList = await self._getReadCommands_AllRecords()
-            
-        #read records for all users
-        logger.info("start reading data, this can take a while, use debug flag to see progress")
-        allUserRecordsList = []
-        for userIdx, userReadCommandsList in enumerate(allUsersReadCommandsList):
-            userConcatenatedRecordBytes = bytearray()
-            for readCommand in userReadCommandsList:
-                userConcatenatedRecordBytes += await btobj.readContinuousEepromData(readCommand["address"], readCommand["size"], self.transmissionBlockSize)
-            #seperate the concatenated bytes into individual records
-            perUserAnalyzedRecordsList = []
-            for recordStartOffset in range(0, len(userConcatenatedRecordBytes), self.recordByteSize):
-                singleRecordBytes = userConcatenatedRecordBytes[recordStartOffset:recordStartOffset+self.recordByteSize]
-                if singleRecordBytes != b'\xff' * self.recordByteSize:
-                    try:
-                        singleRecordDict  = self.deviceSpecific_ParseRecordFormat(singleRecordBytes)
-                        perUserAnalyzedRecordsList.append(singleRecordDict)
-                    except:
-                        logger.warning(f"Error parsing record for user{userIdx+1} at offset {recordStartOffset} data {bytes(singleRecordBytes).hex()}, ignoring this record.")
-            allUserRecordsList.append(perUserAnalyzedRecordsList)
-            
-        if(useUnreadCounter):
-            self.resetUnreadRecordsCounter()
-            
         #maybe this could be combined into a single write
         if(syncTime):
             self.deviceSpecific_syncWithSystemTime()
             bytesToWrite = self.cachedSettingsBytes[self.settingsTimeSyncBytesSlice]
             await btobj.writeContinuousEepromData(self.settingsWriteAddress + self.settingsTimeSyncBytesSlice.start, bytesToWrite, btBlockSize = len(bytesToWrite))
-        if(useUnreadCounter):
-            bytesToWrite = self.cachedSettingsBytes[self.settingsUnreadRecordsBytesSlice]
-            await btobj.writeContinuousEepromData(self.settingsWriteAddress + self.settingsUnreadRecordsBytesSlice.start, bytesToWrite, btBlockSize = len(bytesToWrite))
         
         await btobj.endTransmission()
         return allUserRecordsList
